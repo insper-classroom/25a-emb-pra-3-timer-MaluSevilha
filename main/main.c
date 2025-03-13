@@ -5,6 +5,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "hardware/rtc.h"
@@ -13,20 +14,20 @@
 const int PIN_TRIGGER = 14;
 const int PIN_ECHO = 13;
 
-volatile echo_flag = 0;
+volatile int echo_flag = 0;
 volatile bool timer_fired = false;
 
 void pulso_trigger(int TRIGGER){
     gpio_put(PIN_TRIGGER, 1);
-    sleep_ms(10);
+    sleep_us(10);
     gpio_put(PIN_TRIGGER, 0);
-    sleep_ms(2);
+    sleep_us(2);
 }
 
 void echo_callback(uint gpio, uint32_t events) {
-    if (events == 0x4) { // fall edge
+    if (events == 0x4) { 
         echo_flag = 1;
-    } else if (events == 0x8) { // rise edge
+    } else if (events == 0x8) { 
         echo_flag = 0;
     }
 }
@@ -39,16 +40,17 @@ int64_t alarm_callback(alarm_id_t id, void *user_data) {
 int main() {
     stdio_init_all();
 
-    char[100] comando;
-    char[4] comando_parar = "abcd";
+    uint32_t start_us, stop_us;
+    char comando;
+    char comando_parar = 'p';
     alarm_id_t alarm;
     datetime_t agora = {
         .year  = 2025,
         .month = 03,
-        .day   = 12,
+        .day   = 13,
         .dotw  = 3,
-        .hour  = 08,
-        .min   = 05
+        .hour  = 12,
+        .min   = 44,
         .sec   = 00
     };
 
@@ -63,37 +65,38 @@ int main() {
     gpio_set_irq_enabled_with_callback(PIN_ECHO, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &echo_callback);
 
     while (true) {
-        scanf("%s", comando);
+        scanf("%c", &comando);
 
-        while (comando == "start" && comando_parar != "stop"){
+        while (comando == 's' && comando_parar != 'o'){
+            sleep_ms(300);
+
             pulso_trigger(PIN_TRIGGER);
-            int dist = 0;
-            alarm = add_alarm_in_ms(5000/343, alarm_callback, NULL, false);
+            alarm = add_alarm_in_ms(500, alarm_callback, NULL, false);
+            double dist = -1.0;
 
             if (echo_flag){
-                uint32_t start_ms = to_ms_since_boot(get_absolute_time());
+                start_us = to_us_since_boot(get_absolute_time());
 
-                while(echo_flag){
-                    sleep_ms(10);
-                }
+                while(echo_flag){}
 
-                uint32_t stop_ms = to_ms_since_boot(get_absolute_time());
-                dist = (100*(((stop_ms/1000) - (start_ms/1000))*343))/2;
+                stop_us = to_us_since_boot(get_absolute_time());
+                dist = ((stop_us - start_us)*0.0343)/2;
                 cancel_alarm(alarm);
                 timer_fired = false;
+
+                printf("start: %lf \nstop: %lf \n", start_us, stop_us);
             }
 
             rtc_get_datetime(&agora);
 
-            if(timer_fired && (dist == 0)){
-                printf("%d:%d:%d - FALHA", agora.hour, agora.min, agora.sec);
+            if(timer_fired || (dist < 0)){
+                printf("%d:%d:%d - FALHA \n", agora.hour, agora.min, agora.sec);
             } else {
-                printf("%d:%d:%d - %d", agora.hour, agora.min, agora.sec, dist);
+                printf("%d:%d:%d - %lf cm\n", agora.hour, agora.min, agora.sec, dist);
             }
 
-            for(int i = 0; i < 4; i++){
-                comando_parar[i] = getchar_timeout_us(10000);
-            }
+            comando_parar = getchar_timeout_us(10000);
+            stop_us = 0;
         }
     }
 }
