@@ -65,10 +65,7 @@ int main() {
     while (true) {
         scanf("%c", &comando);
         
-        while (comando == 's' && comando_parar != 'o'){
-            sleep_ms(300);
-            
-            stop_us = 0;
+        while (comando == 's' && comando_parar != 'o'){            
             pulso_trigger(PIN_TRIGGER);
             alarm = add_alarm_in_ms(500, alarm_callback, NULL, false);
 
@@ -76,16 +73,17 @@ int main() {
 
             rtc_get_datetime(&agora);
 
-            if (stop_us != 0){
+            if (!timer_fired){
                 double dist = ((stop_us - start_us)*0.0343)/2;
                 cancel_alarm(alarm);
-                timer_fired = false;
                 printf("%d:%d:%d - %lf cm\n", agora.hour, agora.min, agora.sec, dist);
             } else {
                 printf("%d:%d:%d - FALHA \n", agora.hour, agora.min, agora.sec);
             }
 
+            timer_fired = false;
             comando_parar = getchar_timeout_us(10000);
+            stop_us = 0;
         }
     }
 }
