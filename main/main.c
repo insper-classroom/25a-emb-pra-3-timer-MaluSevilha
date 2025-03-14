@@ -11,11 +11,11 @@
 #include "hardware/rtc.h"
 #include "pico/util/datetime.h"
 
-const int PIN_TRIGGER = 14;
-const int PIN_ECHO = 13;
+const int PIN_TRIGGER = 15;
+const int PIN_ECHO = 14;
 
-volatile int echo_flag = 0;
 volatile bool timer_fired = false;
+volatile uint32_t start_us, stop_us;
 
 void pulso_trigger(int TRIGGER){
     gpio_put(PIN_TRIGGER, 1);
@@ -26,9 +26,9 @@ void pulso_trigger(int TRIGGER){
 
 void echo_callback(uint gpio, uint32_t events) {
     if (events == 0x4) { 
-        echo_flag = 1;
+        stop_us = to_us_since_boot(get_absolute_time());
     } else if (events == 0x8) { 
-        echo_flag = 0;
+        start_us = to_us_since_boot(get_absolute_time());
     }
 }
 
@@ -39,8 +39,6 @@ int64_t alarm_callback(alarm_id_t id, void *user_data) {
 
 int main() {
     stdio_init_all();
-
-    uint32_t start_us, stop_us;
     char comando;
     char comando_parar = 'p';
     alarm_id_t alarm;
@@ -66,37 +64,28 @@ int main() {
 
     while (true) {
         scanf("%c", &comando);
-
+        
         while (comando == 's' && comando_parar != 'o'){
             sleep_ms(300);
-
+            
+            stop_us = 0;
             pulso_trigger(PIN_TRIGGER);
             alarm = add_alarm_in_ms(500, alarm_callback, NULL, false);
-            double dist = -1.0;
 
-            if (echo_flag){
-                start_us = to_us_since_boot(get_absolute_time());
-
-                while(echo_flag){}
-
-                stop_us = to_us_since_boot(get_absolute_time());
-                dist = ((stop_us - start_us)*0.0343)/2;
-                cancel_alarm(alarm);
-                timer_fired = false;
-
-                printf("start: %lf \nstop: %lf \n", start_us, stop_us);
-            }
+            while(stop_us == 0 && timer_fired == false){}
 
             rtc_get_datetime(&agora);
 
-            if(timer_fired || (dist < 0)){
-                printf("%d:%d:%d - FALHA \n", agora.hour, agora.min, agora.sec);
-            } else {
+            if (stop_us != 0){
+                double dist = ((stop_us - start_us)*0.0343)/2;
+                cancel_alarm(alarm);
+                timer_fired = false;
                 printf("%d:%d:%d - %lf cm\n", agora.hour, agora.min, agora.sec, dist);
+            } else {
+                printf("%d:%d:%d - FALHA \n", agora.hour, agora.min, agora.sec);
             }
 
             comando_parar = getchar_timeout_us(10000);
-            stop_us = 0;
         }
     }
 }
